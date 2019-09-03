@@ -1,0 +1,74 @@
+//NOTES
+//php algorithm/method to find score using weak protection
+
+
+
+SELECT
+     *,
+     ROUND(EXP(-7 * EXP(-.23 * `weighted_reports`)), 3) AS `score`
+FROM (
+     SELECT
+         *,
+         POW(`predicted_reports` + SQRT(`predicted_reports` * 
+(`predicted_hits` - `predicted_reports`) / `predicted_hits`), 2) / 
+SQRT(`predicted_hits`) / LN(`size`) * 10 AS `weighted_reports`
+     FROM (
+         SELECT
+             *,
+             GREATEST(0, `reports_this_week`, `intercept_reports` + 
+(`slope_reports` * `current_week_num`)) AS `predicted_reports`,
+             GREATEST(1, `hits_this_week`, `reports_this_week`, 
+`intercept_hits` + (`slope_hits` * `current_week_num`), 
+`intercept_reports` + (`slope_reports` * `current_week_num`)) AS 
+`predicted_hits`
+         FROM (
+             SELECT
+                 *,
+                 `mean_reports` - (`slope_reports` * `mean_weeks`) AS 
+`intercept_reports`,
+                 `mean_hits` - (`slope_hits` * `mean_weeks`) AS 
+`intercept_hits`
+             FROM (
+                 SELECT
+                     *,
+                     IFNULL(`r_reports` * `stddev_reports` / 
+`stddev_week`, 0) AS `slope_reports`,
+                     IFNULL(`r_hits` * `stddev_hits` / `stddev_week`, 0) 
+AS `slope_hits`
+                 FROM (
+                     SELECT
+                         *,
+                         IFNULL(`covariance_reports` / (`stddev_reports` 
+* `stddev_week`), 0) AS `r_reports`,
+                         IFNULL(`covariance_hits` / (`stddev_hits` * 
+`stddev_week`), 0) AS `r_hits`
+                     FROM (
+                         SELECT
+                             `range`,
+                             `range_start`,
+                             `range_end`,
+                             `size`,
+                             `current_week_num`,
+                             AVG(`reports`) AS `mean_reports`,
+                             AVG(`week`) AS `mean_weeks`,
+                             AVG(`hits`) AS `mean_hits`,
+                             (SUM(`week` * `reports`) - SUM(`week`) * 
+SUM(`reports`) / COUNT(`week`)) / COUNT(`week`) AS `covariance_reports`,
+                             (SUM(`week` * `hits`) - SUM(`week`) * 
+SUM(`hits`) / COUNT(`week`)) / COUNT(`week`) AS `covariance_hits`,
+                             STDDEV(`reports`) AS `stddev_reports`,
+                             STDDEV(`week`) AS `stddev_week`,
+                             STDDEV(`hits`) AS `stddev_hits`,
+                             MAX(IF(`week` = `current_week_num`, 
+`reports`, 0)) AS `reports_this_week`,
+                             MAX(IF(`week` = `current_week_num`, `hits`, 
+0)) AS `hits_this_week`
+                         FROM netrange_week, (SELECT 96 as 
+`current_week_num`) `week_num`
+                         GROUP BY `range`
+                     ) `netrange_raw_stats`
+                 ) `netrange_calc_r`
+             ) `netrange_calc_slope`
+         ) `netrange_calc_intercept`
+     ) `netrange_predictions`
+) `netrange_weighted`
